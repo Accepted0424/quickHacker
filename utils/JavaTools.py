@@ -9,7 +9,7 @@ class JavaTools:
     def __init__(self):
         pass
 
-    def generate_jar(java_dir, output_filename = "test.jar",external_jar_path = "", compile_output_dir = "./out/test", jar_output_dir = "./"):
+    def generate_jar(java_dir, output_filename = "test.jar",external_jar_path = "", compile_output_dir = "./out/test", jar_output_dir = "./", mode = "windows"):
         """
         生成jar包
         
@@ -22,6 +22,10 @@ class JavaTools:
         return: 
             是否成功
         """
+        if (mode == 'mac'):
+            java_dir = os.path.expanduser(java_dir)
+            external_jar_path = os.path.expanduser(external_jar_path)
+        
         # 检查compile_output_dir是否存在，不存在则创建
         os.makedirs(compile_output_dir, exist_ok=True)
         
@@ -48,7 +52,10 @@ class JavaTools:
         )
         stdout, stderr = process.communicate()
         if process.returncode != 0:
-            print(f"Error in compiling {java_dir}: {stderr.decode('gbk', errors='ignore')}")
+            if (mode == 'mac'):
+                print(f"Error in compiling {java_dir}: {stderr.decode('utf-8', errors='ignore')}")
+            elif (mode == 'windows'):
+                print(f"Error in compiling {java_dir}: {stderr.decode('gbk', errors='ignore')}")
             return False
 
         # 生成MANIFEST.MF文件
@@ -98,9 +105,17 @@ class JavaTools:
         return input_expr, output_expr, err
     
 if __name__ == "__main__":
-    JavaTools.generate_jar("../oo_homework_2025_23373112_hw_5", "code.jar", "C:/Users/13905/Downloads/elevator1.jar", "hw5/compile", "./")
-    # input, output = JavaTools.run_jar("./tests_u1h2_0309110834/test0.txt", "./test_oo_homework_2025_23373112_hw_2.jar")
-    # print(input)
-    # print(output)
-    os.system('.\\datainput_student_win64.exe | java -jar code.jar')
+    # 确保elevator1.jar、stdin.txt和datainput_student_win64.exe / datainput_student_darwin_m1在当前目录下
+    mode = 'mac' # or 'windows'
+    JavaTools.generate_jar(java_dir="~/oo/oo_homework_2025_23373112_hw_5", # .java文件所在目录
+                           output_filename="code.jar", 
+                           external_jar_path="~/Downloads/elevator1.jar", # 外部jar包路径
+                           compile_output_dir="hw5/compile",
+                           jar_output_dir="./", 
+                           mode = mode)
+    if (mode == 'mac'):
+        os.system('chmod +x datainput_student_darwin_m1')
+        os.system('./datainput_student_darwin_m1 | java -jar code.jar')
+    elif (mode == 'windows'):
+        os.system('.\datainput_student_win64.exe | java -jar code.jar')
     
