@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import time
 
 
 class JavaTools:
@@ -115,7 +116,30 @@ if __name__ == "__main__":
                            mode = mode)
     if (mode == 'mac'):
         os.system('chmod +x datainput_student_darwin_m1')
-        os.system('./datainput_student_darwin_m1 | java -jar code.jar')
+        cmd = "./datainput_student_darwin_m1 | java -jar code.jar"
     elif (mode == 'windows'):
-        os.system('.\datainput_student_win64.exe | java -jar code.jar')
+        cmd = ".\\datainput_student_win64.exe | java -jar code.jar"
+              
+    timeout = 100
+    start_time = time.time()
+    try:
+        # 启动进程
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        # 逐行读取并实时打印输出
+        for line in iter(process.stdout.readline, ''):
+            print(line, end="")  # 直接输出，不要额外换行
+            if time.time() - start_time > timeout:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+
+        # 等待进程结束（确保 stderr 也被读取）
+        process.stdout.close()
+        stderr = process.stderr.read()
+        process.wait()
+
+        if stderr:
+            print("Error output:", stderr)
+    except subprocess.TimeoutExpired:
+        print("Process timed out! Killing process...")
+        process.kill() 
     
