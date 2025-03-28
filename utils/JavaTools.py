@@ -9,7 +9,7 @@ class JavaTools:
     def __init__(self):
         pass
 
-    def generate_jar(java_dir, output_filename = "test.jar", compile_output_dir = "./out/test", jar_output_dir = "./"):
+    def generate_jar(java_dir, output_filename = "test.jar",external_jar_path = "", compile_output_dir = "./out/test", jar_output_dir = "./"):
         """
         生成jar包
         
@@ -42,7 +42,7 @@ class JavaTools:
         print("Found Java files:")
         print("\n".join(str(file) for file in java_files))
         process = subprocess.Popen(
-            ['javac', '-d', compile_output_dir, '-encoding', 'utf-8'] + [str(file) for file in java_files],
+            ['javac', '-d', compile_output_dir, '-encoding', 'utf-8', '-classpath', external_jar_path] + [str(file) for file in java_files],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
@@ -54,6 +54,7 @@ class JavaTools:
         # 生成MANIFEST.MF文件
         with open('MANIFEST.MF', 'w') as f:
             f.write('Main-Class: MainClass\n')
+            f.write(f'Class-Path: {os.path.basename(external_jar_path)}\n')
 
         process = subprocess.Popen(
             ['jar', 'cfm', output_filename, 'MANIFEST.MF', '-C', compile_output_dir, jar_output_dir],
@@ -97,7 +98,9 @@ class JavaTools:
         return input_expr, output_expr, err
     
 if __name__ == "__main__":
-    # JavaTools.generate_jar("./src", "test.jar", "out/test", "./")
-    input, output = JavaTools.run_jar("./tests_u1h2_0309110834/test0.txt", "./test_oo_homework_2025_23373112_hw_2.jar")
-    print(input)
-    print(output)
+    JavaTools.generate_jar("../oo_homework_2025_23373112_hw_5", "code.jar", "C:/Users/13905/Downloads/elevator1.jar", "hw5/compile", "./")
+    # input, output = JavaTools.run_jar("./tests_u1h2_0309110834/test0.txt", "./test_oo_homework_2025_23373112_hw_2.jar")
+    # print(input)
+    # print(output)
+    os.system('.\\datainput_student_win64.exe | java -jar code.jar')
+    
