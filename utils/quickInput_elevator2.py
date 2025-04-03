@@ -78,35 +78,19 @@ class JavaTools:
             return False
         return True
     
-    # 运行测试用例
-    def run_jar(test_data_path, test_jar):
-        """
-        运行测试用例
-        
-        Args:
-            test_data_path: 测试数据文件
-            test_jar: 测试jar包
-            
-        return: 
-            jar包运行结果
-        """
-        with open(test_data_path, 'r') as f:
-            input_expr = f.read().strip()
-        process = subprocess.Popen(
-            ['java', '-jar', test_jar],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        try:
-            stdout, stderr = process.communicate(input=input_expr.encode('gbk', errors='ignore'), timeout=5)
-            output_expr = stdout.decode('gbk', errors="ignore").strip()
-        except subprocess.TimeoutExpired:
-            process.kill()  # 终止 Java 进程
-            stdout, stderr = process.communicate()  # 获取部分输出
-            output_expr = stdout.decode('gbk', errors="ignore").strip()
-        err = stderr.decode('gbk', errors='ignore')
-        return input_expr, output_expr, err
+    def log(str, log_output, color):
+        with open(log_output, "a") as f:
+            f.write(str)
+        if color == "red":
+            print("\033[31m" + str + "\033[0m")
+        elif color == "green":
+            print("\033[32m" + str + "\033[0m")
+        elif color == "yellow":
+            print("\033[33m" + str + "\033[0m")
+        elif color == "blue":
+            print("\033[34m" + str + "\033[0m")
+        else:
+            print(str)
     
 if __name__ == "__main__":
     # 确保elevator1.jar、stdin.txt和datainput_student_win64.exe / datainput_student_darwin_m1在当前目录下
@@ -125,10 +109,15 @@ if __name__ == "__main__":
 
     # 读取stdin.txt文件，提取乘客数据
     passenger_data = {}
+    schedule_data = {}
     elevator_data = {}
     for i in range(0, 7):
         elevator_data[i] = {
-            "Status": "CLOSE"
+            "STATUS": "CLOSE",
+            "INSCHEDULE": False,
+            "beforeBegin": True,
+            "beforeBeginArriveNum": 0,
+            "SPEED": 0.4 # 0.4s/floor
         }
     Trun = 0
     average_time = 0
@@ -151,19 +140,29 @@ if __name__ == "__main__":
                 
             line = re.sub(r"\[\d+(\.\d+)?\]\s*", "", line)
             parts = line.strip().split('-')
-            entry = {
-                "ID": parts[0],
-                "PRI": int(parts[2]),
-                "FROM": parts[4],
-                "TO": parts[6],
-                "ELEVATOR": parts[8],
-                "REQUEST_TIME": request_time,
-                "CONSUME_TIME": 0,
-                "ARRIVE": False,
-                "INELEVATOR": False,
-            }
-            total_pri += int(parts[2])
-            passenger_data[parts[0]] = entry
+            if parts[0] == "SCHE":
+                entry = {
+                    "ELEVATOR": parts[1],
+                    "SPEED": float(parts[2]),
+                    "TARGET": int(parts[3]),
+                    "DONE": False,
+                }
+                schedule_data[parts[1]] = entry
+
+            else :
+                entry = {
+                    "ID": parts[0],
+                    "PRI": int(parts[2]),
+                    "FROM": parts[4],
+                    "TO": parts[6],
+                    "ELEVATOR": parts[8],
+                    "REQUEST_TIME": request_time,
+                    "CONSUME_TIME": 0,
+                    "ARRIVE": False,
+                    "INELEVATOR": False,
+                }
+                total_pri += int(parts[2])
+                passenger_data[parts[0]] = entry
             line = f.readline()
         
     timeout = 65
@@ -174,7 +173,6 @@ if __name__ == "__main__":
         process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
         # 逐行读取并实时打印输出
-        
         final_info_time = 0
         for line in iter(process.stdout.readline, ''):
             print(line, end="")
@@ -189,34 +187,61 @@ if __name__ == "__main__":
             line = re.sub(r"\[(.*)?\d+(\.\d+)?\]\s*", "", line)
             parts = line.strip().split('-')
             
-            if (parts[0] == "ARRIVE"):
+            if parts[0] == "ARRIVE":
+                # 接收到临时调度指令的电梯必须在两次移动楼层操作内输出SCHE-BEGIN-电梯ID开始临时调度动作
+                if elevator_data[parts[2]]["beforeBegin"]:
+                    elevator_data[parts[2]]["beforeBeginArriveNum"] = elevator_data[parts[2]]["beforeBeginArriveNum"] + 1
+                    if elevator_data[parts[2]]["beforeBeginArriveNum"] > 2:
+                        error = True
+                        JavaTools.log("ERROR: Arrive num exceed 2 After schdule accept before schedule begin ", output, "red")
                 power_conusmed += 0.4
+                
+            elif parts[0] == "RECEIVE":
+                if schedule_data[parts[1]] is None or schedule_data[parts[1]]["DONE"] == True:
+                    schedule_data[parts[1]] = entry
+                    elevator_data[int(parts[1])]["INSCHEDULE"] = True
+                    elevator_data[int(parts[1])]["SPEED"] = float(parts[2])
+                else:
+                    error = True
+                    JavaTools.log("ERROR: Elevator " + parts[1] + " has schedule undone!\n", output, "red")
+                
+            elif parts[0] == "SCHE":
+                if (parts[1] == "ACCEPT"):
+                    elevator_data[parts[2]]["beforeBegin"] = True
+                if (parts[1] == "BEGIN"):
+                    if elevator_data[parts[2]]["STATUS"] != "CLOSE":
+                        JavaTools.log("ERROR: Schedule begin but door is open", output, "red")
+                    elevator_data[parts[2]]["beforeBegin"] = False
+                elif (parts[1] == "END"):
+                    elevator_data[parts[2]]["INSCHEDULE"] = False
+                
             elif (parts[0] == "OPEN" or parts[0] == "CLOSE"):
-                elevator_data[int(parts[2])]["Status"] = parts[0]
+                if elevator_data[parts[2]]["INSCHEDULE"] and elevator_data[parts[2]]["beforeBegin"] == False:
+                    error = True
+                    JavaTools.log("ERROR: you can't open or close door in schedule!", output, "red")
+                elevator_data[int(parts[2])]["STATUS"] = parts[0]
                 power_conusmed += 0.1
+                
             elif (parts[0] == "OUT"):
                 passenger_data[parts[1]]["INELEVATOR"] = False
-                if elevator_data[int(parts[3])]["Status"] == "CLOSE":
+                if elevator_data[int(parts[3])]["STATUS"] == "CLOSE":
                     error = True
-                    with open(output, "a") as f:
-                        f.write("Passenger " + parts[1] + " cannot leave Elevator " + parts[3] + " when the door closed\n")
-                    print("\033[31mPassenger", parts[1], "cannot leave Elevator ", parts[3], " when the door closed\033[0m")
-                if (parts[2] == passenger_data[parts[1]]["TO"]):
+                    JavaTools.log("Passenger " + parts[1] + " cannot leave Elevator " + parts[3] + " when the door closed\n", output, "red")
+                if parts[3] == passenger_data[parts[2]]["TO"] and parts[1] == 'F':
                     passenger_data[parts[1]]["ARRIVE"] = True
                     passenger_data[parts[1]]["CONSUME_TIME"] = (info_time - passenger_data[parts[1]]["REQUEST_TIME"])
                     average_time += passenger_data[parts[1]]["CONSUME_TIME"] * passenger_data[parts[1]]["PRI"]
-            elif (parts[0] == "IN"):
+                elif parts[3] != passenger_data[parts[2]]["TO"] and parts[1] == "S":
+                    /* TODO */
+                    
+            elif parts[0] == "IN":
                 if passenger_data[parts[1]]["INELEVATOR"] == True:
                     error = True
-                    with open(output, "a") as f:
-                        f.write("Passenger " + parts[1] + " cannot enter Elevator " + parts[3] + " when already in the elevator\n")
-                    print("\033[31mPassenger", parts[1], "cannot enter Elevator ", parts[3], " when already in the elevator\033[0m")
+                    JavaTools.log("Passenger " + parts[1] + " cannot enter Elevator " + parts[3] + " when already in the elevator\n", output, "red")
                 passenger_data[parts[1]]["INELEVATOR"] = True
                 if elevator_data[int(parts[3])]["Status"] == "CLOSE":
                     error = True
-                    with open(output, "a") as f:
-                        f.write("Passenger " + parts[1] + " cannot enter Elevator " + parts[3] + " when the door closed\n")
-                    print("\033[31mPassenger", parts[1], "cannot enter Elevator ", parts[3], " when the door closed\033[0m")
+                    JavaTools.log("Passenger " + parts[1] + " cannot enter Elevator " + parts[3] + " when the door closed\n", output, "red")
             
             # 判断是否超时
             if time.time() - start_time > timeout:
@@ -228,44 +253,35 @@ if __name__ == "__main__":
         for value in passenger_data.values():
             if value["ARRIVE"] == False:
                 all_arrived = False
-                with open(output, "a") as f:
-                    f.write("Passenger " + value["ID"] + " did not arrive at the destination!\n")
-                print("\033[31mPassenger", value["ID"], "did not arrive at the destination!\033[0m")
+                JavaTools.log("Passenger " + value["ID"] + " did not arrive at the destination!\n", output, "red")
         
         if all_arrived:
-            with open(output, "a") as f:
-                f.write("All passengers arrived!\n")
-            print("\033[32mAll passengers arrived!\033[0m")
+            JavaTools.log("All passengers arrived!\n", output, "green")
             
         if error:
-            with open(output, "a") as f:
-                f.write("Error occurred!\n")
-            print("\033[31mError occurred! Please check errors in log\033[0m")
-                
-        with open(output, "a") as f:
-            f.write("Run Time: " + str(Max(final_info_time, time.time() - start_time)) + "\n")
-            f.write("Average Time: " + str(average_time) + "\n")
-            f.write("Power Consumed: " + str(power_conusmed) + "\n")
-        print("\033[34mRun Time:", Max(final_info_time, time.time() - start_time), "\033[0m")
-        print("\033[34mAverage Time:", average_time, "\033[0m")
-        print("\033[34mPower Consumed:", power_conusmed, "\033[0m")
+            JavaTools.log("Error occurred!\n", output, "red")
+            
+        JavaTools.log("Run Time: " + str(Max(final_info_time, time.time() - start_time)) + "\n", output, "blue")
+        JavaTools.log("Average Time: " + str(average_time) + "\n", output, "blue")
+        JavaTools.log("Power Consumed: " + str(power_conusmed) + "\n", output, "blue")
         
         cmd = input("Whether to save the log? (Y/N)\n")
         if cmd == 'Y' or cmd == 'y':
             print("Log saved!")
         elif cmd == 'N' or cmd == 'n':
             os.remove(output)
-            print("Log not saved!")
+            print("Log has been deleted!")
         else:
-            print("Invalid input!")
+            os.remove(output)
+            print("Log has been deleted!")
 
         # 等待进程结束（确保 stderr 也被读取）
         process.stdout.close()
         stderr = process.stderr.read()
         process.wait()
-
         if stderr:
             print("Error output:", stderr)
+            
     except subprocess.TimeoutExpired:
         print("Process timed out! Killing process...")
         process.kill() 
