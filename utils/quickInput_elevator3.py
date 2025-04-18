@@ -9,8 +9,6 @@ import shutil
 import subprocess
 import time
 
-from sympy import N, true
-
 input_to_terminal = True
 epsilon = 1e-4
 
@@ -162,8 +160,16 @@ class Logger:
     
 def main():
     # 确保elevator1.jar、stdin.txt和datainput_student_win64.exe / datainput_student_darwin_m1在当前目录下
-    mode = 'windows' # 'mac' or 'windows'
-    JavaTools.generate_jar(java_dir="../oo_homework_2025_23373112_hw_7", # .java文件所在目录
+    # mode = 'windows' # 'mac' or 'windows'
+    # JavaTools.generate_jar(java_dir="../oo_homework_2025_23373112_hw_7", # .java文件所在目录
+    #                       output_filename="code.jar", 
+    #                       external_jar_path="elevator3.jar", # 外部jar包路径
+    #                       compile_output_dir="hw7/compile",
+    #                       jar_output_dir="./", 
+    #                       mode = mode)
+    
+    mode = 'mac'
+    JavaTools.generate_jar(java_dir="~/oo/oo_homework_2025_23373112_hw_7", # .java文件所在目录
                            output_filename="code.jar", 
                            external_jar_path="elevator3.jar", # 外部jar包路径
                            compile_output_dir="hw7/compile",
@@ -175,7 +181,7 @@ def main():
     elif (mode == 'windows'):
         cmd = ".\\datainput_student_win64.exe | java -jar code.jar"
 
-    passengers = [Passenger(0, 0, 0, 0, 0) for i in range(1000)]
+    passengers = [Passenger(0, 0, 0, 0, 0) for i in range(2000)]
     elevators = [None] + [Elevator(i) for i in range(1, 7)]
     schedules = [None for _ in range(7)]
         
@@ -214,7 +220,7 @@ def main():
         with open(output, "a") as out:
                 out.write('\n')
         
-    timeout = 100
+    timeout = 220
     start_time = time.time()
     error = False
     try:
@@ -253,7 +259,20 @@ def main():
                 cur_floor = parts[1]
                 elevator_id = parts[2]
                 this_elevator = elevators[int(elevator_id)]
+                this_elevator.last_floor = this_elevator.cur_floor
                 this_elevator.cur_floor = cur_floor
+                # 连续移动
+                if intOf(this_elevator.last_floor) == intOf(cur_floor) - 1 and intOf(cur_floor) != 1:
+                    pass
+                elif intOf(this_elevator.last_floor) == intOf(cur_floor) + 1 and intOf(cur_floor) != -1:
+                    pass
+                elif (intOf(this_elevator.last_floor) == -1 or intOf(this_elevator.last_floor) == 2) and intOf(cur_floor) == 1:
+                    pass
+                elif (intOf(this_elevator.last_floor) == 1 or intOf(this_elevator.last_floor) == -2) and intOf(cur_floor) == -1:
+                    pass
+                else:
+                    error = True
+                    Logger.log("Elevator " + elevator_id + ": you can't directly arrive at floor " + cur_floor + " because of last floor is " + this_elevator.last_floor, output, "red")
                 if this_elevator.accept_nobegin == True:
                     this_elevator.accept2begin_arrive_num += 1
                     if this_elevator.accept2begin_arrive_num > 2:
@@ -279,13 +298,12 @@ def main():
                         error = True
                         Logger.log("Elevator " + elevator_id + ": speed is too fast! your speed need at least " + str(this_elevator.speed) , output, "red")
                 # 非法移动判断
-                if this_elevator.in_schedule == False and this_elevator.receive_outside_num == 0 and this_elevator.inside_passenger_num == 0:
+                if this_elevator.in_schedule == False and this_elevator.receive_outside_num == 0 and this_elevator.inside_passenger_num == 0 and this_elevator.last_floor != this_elevator.transfer_floor:
                     error = True
                     Logger.log("Elevator " + elevator_id + ": you can't move when no schedule and no receive outside and no one inside, the transfer floor is " + this_elevator.transfer_floor, output, "red")
                 if (this_elevator.update_begin_no_end == True):
                     error = True
                     Logger.log("Elevator " + elevator_id + ": you can't move after update begin but not end", output, "red")
-                this_elevator.last_floor = cur_floor
                 
             elif parts[0] == "RECEIVE":
                 passenger_id = parts[1]
@@ -409,8 +427,10 @@ def main():
                         if info_time - elevator_a.update_begin_time < 1.0 - epsilon or info_time - elevator_b.update_begin_time < 1.0 - epsilon:
                             error = True
                             Logger.log("Elevator " + elevator_a_id + " and " + elevator_b_id + ": Update time between begin and end less than 1s", output, "red")
-                        elevator_a.cur_floor = intOf(elevator_a.transfer_floor) + 1
-                        elevator_b.cur_floor = intOf(elevator_b.transfer_floor) - 1
+                        elevator_a.last_floor = elevator_a.cur_floor
+                        elevator_b.last_floor = elevator_b.cur_floor
+                        elevator_a.cur_floor = strOf(1 if intOf(elevator_a.transfer_floor) + 1 == 0 else intOf(elevator_a.transfer_floor) + 1)
+                        elevator_b.cur_floor = strOf(-1 if intOf(elevator_b.transfer_floor) - 1 == 0 else intOf(elevator_b.transfer_floor) - 1)
                         elevator_a.limit_min_floor = elevator_a.transfer_floor
                         elevator_b.limit_max_floor = elevator_b.transfer_floor
                         elevator_a.update_begin_no_end = False
